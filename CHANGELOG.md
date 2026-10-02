@@ -42,6 +42,7 @@ v10.0 lets LiteGraph run as several identical nodes behind a load balancer, all 
   - The build scripts move `:latest` whenever a release tag (`vMAJOR.MINOR.PATCH`) is built and never for other tags, so testing a release candidate does not change what `latest` users get.
   - CI builds images from each commit and runs every deployment's smoke test (and the cluster failover test) on pull requests, nightly, and on demand; the .NET job's PostgreSQL service uses pgvector.
 - **Fixes**
+  - SQLite: query results are no longer loaded through `DataTable.Load`, whose `GetSchemaTable` call made Microsoft.Data.Sqlite scan the whole source table once per result column (`SELECT typeof(column) ... GROUP BY`). Every query paid a full-table scan that grew with the database: on a 215 MB database a node read by GUID took 1.5 s instead of 25 ms and a node's tag read 175 ms instead of 0.2 ms. Results now load straight from the reader with the same column names (duplicates from joins numbered as before), types, and values; new `Storage.Sqlite.ResultLoading` Touchstone case.
   - Server security tokens now expire (`AuthenticationToken.IsExpired` compared the issue time with the expiry instead of the current time).
   - SQLite: nodes created with inline vectors now reach the HnswLite index, and an in-memory index is rebuilt from the database on first use after a restart instead of returning no results.
   - Turning caching off no longer throws; the server now passes `Caching` settings to the client at construction.

@@ -57,6 +57,11 @@
                         executeAsync: TestSqliteReservedWordRoundTrip),
                     new TestCaseDescriptor(
                         suiteId: "Improvements.Foundation",
+                        caseId: "Storage.Sqlite.ResultLoading",
+                        displayName: "SQLite loads joined, BLOB, null, and empty results without a schema-table scan",
+                        executeAsync: TestSqliteResultLoading),
+                    new TestCaseDescriptor(
+                        suiteId: "Improvements.Foundation",
                         caseId: "Storage.Postgresql.ReservedWordRoundTrip",
                         displayName: "PostgreSQL stores tag, label, name, and data values containing SQL keywords byte-identical",
                         executeAsync: ct => TestPostgresqlReservedWordRoundTrip(PostgresqlTestConnectionStringEnvironmentVariable, ct),
@@ -638,6 +643,109 @@
                 {
                     repo.InitializeRepository();
                     await RunReservedWordRoundTrip(repo, "SQLite", cancellationToken).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                DeleteFileIfExists(filename);
+            }
+        }
+
+        private static async Task TestSqliteResultLoading(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string filename = "test-result-loading-" + Guid.NewGuid().ToString("N") + ".db";
+            DeleteFileIfExists(filename);
+
+            try
+            {
+                using (GraphRepositoryBase repo = GraphRepositoryFactory.Create(new DatabaseSettings
+                {
+                    Type = DatabaseTypeEnum.Sqlite,
+                    Filename = filename
+                }))
+                {
+                    repo.InitializeRepository();
+
+                    using (LiteGraphClient client = new LiteGraphClient(repo, null, null, null, false))
+                    {
+                        TenantMetadata tenant = await client.Tenant.Create(new TenantMetadata { Name = "Result Loading Tenant" }, cancellationToken).ConfigureAwait(false);
+                        Graph graph = await client.Graph.Create(new Graph { TenantGUID = tenant.GUID, Name = "Result Loading Graph" }, cancellationToken).ConfigureAwait(false);
+
+                        List<float> embeddings = Enumerable.Range(0, 64).Select(i => (float)(i * 0.25 - 3.5)).ToList();
+                        List<Node> nodes = new List<Node>();
+                        for (int i = 0; i < 5; i++)
+                        {
+                            nodes.Add(new Node
+                            {
+                                TenantGUID = tenant.GUID,
+                                GraphGUID = graph.GUID,
+                                Name = "node-" + i,
+                                Tags = new NameValueCollection { { "source", "doc-" + i }, { "chunk", i.ToString() } },
+                                Data = i == 0 ? null : new Dictionary<string, object> { ["content"] = "text " + i },
+                                Vectors = new List<VectorMetadata>
+                                {
+                                    new VectorMetadata
+                                    {
+                                        Model = "test-model",
+                                        Dimensionality = embeddings.Count,
+                                        Content = "chunk " + i,
+                                        Vectors = embeddings
+                                    }
+                                }
+                            });
+                        }
+
+                        List<Node> created = await client.Node.CreateMany(tenant.GUID, graph.GUID, nodes, cancellationToken).ConfigureAwait(false);
+                        Node target = created.Single(n => n.Name == "node-3");
+
+                        // A tag filter joins nodes with tags, so the result carries guid, createdutc, ... twice;
+                        // the node must be built from the nodes table's columns, not the tag row's.
+                        List<Node> filtered = new List<Node>();
+                        await foreach (Node node in client.Node.ReadMany(
+                            tenant.GUID,
+                            graph.GUID,
+                            null,
+                            null,
+                            new NameValueCollection { { "source", "doc-3" } },
+                            null,
+                            EnumerationOrderEnum.CreatedAscending,
+                            0,
+                            includeData: true,
+                            includeSubordinates: false,
+                            cancellationToken).ConfigureAwait(false))
+                        {
+                            filtered.Add(node);
+                        }
+
+                        AssertEqual(1, filtered.Count, "SQLite tag-filtered read returns exactly the tagged node");
+                        AssertEqual(target.GUID, filtered[0].GUID, "SQLite tag-filtered read returns the node's own GUID, not the tag's");
+                        AssertEqual("node-3", filtered[0].Name, "SQLite tag-filtered read returns the node's name");
+
+                        Node read = await client.Node.ReadByGuid(tenant.GUID, graph.GUID, target.GUID, includeData: true, includeSubordinates: true, token: cancellationToken).ConfigureAwait(false);
+                        AssertNotNull(read, "SQLite reads back the node by GUID");
+                        AssertEqual("doc-3", read.Tags!["source"], "SQLite round-trips the node's tags");
+                        AssertEqual(1, read.Vectors!.Count, "SQLite returns the node's vector");
+                        AssertTrue(read.Vectors[0].Vectors!.SequenceEqual(embeddings), "SQLite round-trips vector embeddings stored as BLOB");
+                        AssertEqual("chunk 3", read.Vectors[0].Content, "SQLite round-trips vector content");
+
+                        Node withoutData = await client.Node.ReadByGuid(tenant.GUID, graph.GUID, created.Single(n => n.Name == "node-0").GUID, includeData: true, includeSubordinates: false, token: cancellationToken).ConfigureAwait(false);
+                        AssertTrue(withoutData.Data == null, "SQLite returns null data for a node stored without data");
+
+                        Node missing = await client.Node.ReadByGuid(tenant.GUID, graph.GUID, Guid.NewGuid(), includeData: true, includeSubordinates: false, token: cancellationToken).ConfigureAwait(false);
+                        AssertTrue(missing == null, "SQLite returns null for a node that does not exist");
+
+                        List<Guid> guids = created.Select(n => n.GUID).ToList();
+                        List<Node> many = new List<Node>();
+                        await foreach (Node node in client.Node.ReadByGuids(tenant.GUID, guids, includeData: true, includeSubordinates: false, cancellationToken).ConfigureAwait(false))
+                        {
+                            many.Add(node);
+                        }
+
+                        AssertEqual(guids.Count, many.Count, "SQLite reads every node of a GUID batch");
+                        AssertTrue(guids.All(g => many.Any(n => n.GUID == g)), "SQLite batch read returns each requested GUID");
+                    }
                 }
             }
             finally

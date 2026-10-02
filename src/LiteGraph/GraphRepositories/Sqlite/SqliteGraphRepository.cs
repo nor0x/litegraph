@@ -4,6 +4,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
     using System.Collections.Generic;
     using System.Data;
     using System.Diagnostics;
+    using System.Globalization;
     using System.IO;
     using System.Linq;
     using System.Runtime.ExceptionServices;
@@ -677,7 +678,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                             cmd.Transaction = _Transaction;
                             using (SqliteDataReader rdr = cmd.ExecuteReader())
                             {
-                                result.Load(rdr);
+                                LoadTable(rdr, result);
                             }
                         }
                     }
@@ -703,7 +704,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                         {
                             using (SqliteDataReader rdr = cmd.ExecuteReader())
                             {
-                                result.Load(rdr);
+                                LoadTable(rdr, result);
                             }
                         }
                     }
@@ -733,7 +734,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                         {
                             using (SqliteDataReader rdr = cmd.ExecuteReader())
                             {
-                                result.Load(rdr);
+                                LoadTable(rdr, result);
                             }
                         }
 
@@ -809,7 +810,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                             token.ThrowIfCancellationRequested();
                             using (SqliteDataReader rdr = cmd.ExecuteReader())
                             {
-                                result.Load(rdr);
+                                LoadTable(rdr, result);
                             }
                         }
                     }
@@ -835,7 +836,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                         token.ThrowIfCancellationRequested();
                         using (SqliteDataReader rdr = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false))
                         {
-                            result.Load(rdr);
+                            LoadTable(rdr, result);
                         }
                     }
                 }
@@ -865,7 +866,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                             token.ThrowIfCancellationRequested();
                             using (SqliteDataReader rdr = await cmd.ExecuteReaderAsync(token).ConfigureAwait(false))
                             {
-                                result.Load(rdr);
+                                LoadTable(rdr, result);
                             }
                         }
 
@@ -942,7 +943,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                                 using (SqliteDataReader rdr = cmd.ExecuteReader())
                                 {
                                     lastResult = new DataTable();
-                                    lastResult.Load(rdr);
+                                    LoadTable(rdr, lastResult);
                                 }
 
                                 if (lastResult != null && lastResult.Rows.Count > 0)
@@ -996,7 +997,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                                 using (SqliteDataReader rdr = cmd.ExecuteReader())
                                 {
                                     lastResult = new DataTable();
-                                    lastResult.Load(rdr);
+                                    LoadTable(rdr, lastResult);
                                 }
 
                                 if (lastResult != null && lastResult.Rows.Count > 0)
@@ -1056,7 +1057,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                                 using (SqliteDataReader rdr = cmd.ExecuteReader())
                                 {
                                     lastResult = new DataTable();
-                                    lastResult.Load(rdr);
+                                    LoadTable(rdr, lastResult);
                                 }
 
                                 if (lastResult != null && lastResult.Rows.Count > 0)
@@ -1146,6 +1147,96 @@ namespace LiteGraph.GraphRepositories.Sqlite
         #endregion
 
         #region Private-Methods
+
+        // Equivalent to DataTable.Load(rdr) without SqliteDataReader.GetSchemaTable(), which runs a
+        // "SELECT typeof(column) ... GROUP BY" scan over the whole source table for every result column.
+        // On a large table that turns each millisecond query into seconds, growing with the table.
+        // Column names are made unique exactly as DataTable.Load does, so joined results keep the first
+        // table's names (guid, guid1, ...), and the reader is advanced or closed the same way.
+        private static void LoadTable(SqliteDataReader rdr, DataTable table)
+        {
+            if (rdr.FieldCount > 0)
+            {
+                string[] names = new string[rdr.FieldCount];
+                for (int i = 0; i < names.Length; i++) names[i] = rdr.GetName(i);
+                MakeColumnNamesUnique(names);
+
+                for (int i = 0; i < names.Length; i++)
+                {
+                    table.Columns.Add(new DataColumn(names[i], rdr.GetFieldType(i)));
+                }
+
+                object[] values = new object[names.Length];
+                table.BeginLoadData();
+
+                try
+                {
+                    while (rdr.Read())
+                    {
+                        rdr.GetValues(values);
+                        table.LoadDataRow(values, true);
+                    }
+                }
+                finally
+                {
+                    table.EndLoadData();
+                }
+            }
+
+            if (!rdr.IsClosed && !rdr.NextResult()) rdr.Close();
+        }
+
+        private static void MakeColumnNamesUnique(string[] names)
+        {
+            Dictionary<string, int> lastIndex = new Dictionary<string, int>(names.Length);
+            int startIndex = names.Length;
+
+            for (int i = names.Length - 1; i >= 0; i--)
+            {
+                string name = names[i];
+                if (!String.IsNullOrEmpty(name))
+                {
+                    string key = name.ToLowerInvariant();
+                    if (lastIndex.TryGetValue(key, out int index)) startIndex = Math.Min(startIndex, index);
+                    lastIndex[key] = i;
+                }
+                else
+                {
+                    names[i] = String.Empty;
+                    startIndex = i;
+                }
+            }
+
+            int uniqueIndex = 1;
+            for (int i = startIndex; i < names.Length; i++)
+            {
+                if (names[i].Length == 0)
+                {
+                    uniqueIndex = AssignUniqueColumnName(lastIndex, names, i, "Column", uniqueIndex);
+                }
+                else if (lastIndex[names[i].ToLowerInvariant()] != i)
+                {
+                    AssignUniqueColumnName(lastIndex, names, i, names[i], 1);
+                }
+            }
+        }
+
+        private static int AssignUniqueColumnName(Dictionary<string, int> lastIndex, string[] names, int position, string baseName, int uniqueIndex)
+        {
+            while (true)
+            {
+                string candidate = baseName + uniqueIndex.ToString(CultureInfo.InvariantCulture);
+                string key = candidate.ToLowerInvariant();
+                if (!lastIndex.ContainsKey(key))
+                {
+                    names[position] = candidate;
+                    lastIndex.Add(key, position);
+                    return uniqueIndex;
+                }
+
+                uniqueIndex++;
+            }
+        }
 
         private DataTable ExecuteRepositoryOperation(
             string operation,
@@ -1368,7 +1459,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                     {
                         using (SqliteDataReader rdr = cmd.ExecuteReader())
                         {
-                            result.Load(rdr);
+                            LoadTable(rdr, result);
                         }
                     }
                 }
@@ -1428,7 +1519,7 @@ namespace LiteGraph.GraphRepositories.Sqlite
                             using (SqliteDataReader rdr = cmd.ExecuteReader())
                             {
                                 lastResult = new DataTable();
-                                lastResult.Load(rdr);
+                                LoadTable(rdr, lastResult);
                             }
 
                             if (lastResult != null && lastResult.Rows.Count > 0)
