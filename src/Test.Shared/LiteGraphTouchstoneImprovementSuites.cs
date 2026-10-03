@@ -62,6 +62,11 @@
                         executeAsync: TestSqliteResultLoading),
                     new TestCaseDescriptor(
                         suiteId: "Improvements.Foundation",
+                        caseId: "Storage.Sqlite.GraphEnumerationIndexed",
+                        displayName: "SQLite graph-wide reads page through a creation-order index without sorting",
+                        executeAsync: TestSqliteGraphEnumerationIndexed),
+                    new TestCaseDescriptor(
+                        suiteId: "Improvements.Foundation",
                         caseId: "Storage.Postgresql.ReservedWordRoundTrip",
                         displayName: "PostgreSQL stores tag, label, name, and data values containing SQL keywords byte-identical",
                         executeAsync: ct => TestPostgresqlReservedWordRoundTrip(PostgresqlTestConnectionStringEnvironmentVariable, ct),
@@ -752,6 +757,63 @@
             {
                 DeleteFileIfExists(filename);
             }
+        }
+
+        private static Task TestSqliteGraphEnumerationIndexed(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string filename = "test-graph-enumeration-index-" + Guid.NewGuid().ToString("N") + ".db";
+            DeleteFileIfExists(filename);
+
+            try
+            {
+                using (GraphRepositoryBase repo = GraphRepositoryFactory.Create(new DatabaseSettings
+                {
+                    Type = DatabaseTypeEnum.Sqlite,
+                    Filename = filename
+                }))
+                {
+                    repo.InitializeRepository();
+                }
+
+                using (SqliteConnection conn = new SqliteConnection("Data Source=" + filename + ";Pooling=false"))
+                {
+                    conn.Open();
+
+                    // Graph-wide reads page by creation order; without an index covering it every page
+                    // sorts the whole table, blobs included, so a full read grows quadratically.
+                    foreach (string table in new[] { "nodes", "edges", "labels", "tags", "vectors" })
+                    {
+                        foreach (string order in new[] { "createdutc ASC, guid ASC", "createdutc DESC, guid DESC" })
+                        {
+                            List<string> plan = new List<string>();
+                            using (SqliteCommand cmd = new SqliteCommand(
+                                "EXPLAIN QUERY PLAN SELECT * FROM '" + table + "' WHERE tenantguid = 't' AND graphguid = 'g' ORDER BY " + order + " LIMIT 100 OFFSET 500;",
+                                conn))
+                            using (SqliteDataReader rdr = cmd.ExecuteReader())
+                            {
+                                while (rdr.Read()) plan.Add(rdr.GetString(3));
+                            }
+
+                            string summary = String.Join(" | ", plan);
+                            AssertTrue(
+                                summary.Contains("idx_" + table + "_tenantguid_graphguid_createdutc_guid", StringComparison.Ordinal),
+                                "SQLite graph-wide " + table + " read (" + order + ") uses the creation-order index: " + summary);
+                            AssertTrue(
+                                !summary.Contains("TEMP B-TREE", StringComparison.Ordinal),
+                                "SQLite graph-wide " + table + " read (" + order + ") needs no sort: " + summary);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                SqliteConnection.ClearAllPools();
+                DeleteFileIfExists(filename);
+            }
+
+            return Task.CompletedTask;
         }
 
         private static async Task TestPostgresqlReservedWordRoundTrip(string connectionStringEnvironmentVariable, CancellationToken cancellationToken)

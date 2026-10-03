@@ -195,6 +195,7 @@ namespace LiteGraph.GraphRepositories.Sqlite.Queries
 
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_labels_tenantguid_guid' ON 'labels' (tenantguid ASC, guid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_labels_tenantguid_graphguid' ON 'labels' (tenantguid ASC, graphguid ASC);");
+            sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_labels_tenantguid_graphguid_createdutc_guid' ON 'labels' (tenantguid ASC, graphguid ASC, createdutc ASC, guid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_labels_tenantguid_graphguid_nodeguid' ON 'labels' (tenantguid ASC, graphguid ASC, nodeguid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_labels_tenantguid_graphguid_edgeguid' ON 'labels' (tenantguid ASC, graphguid ASC, edgeguid ASC);");
 
@@ -226,6 +227,7 @@ namespace LiteGraph.GraphRepositories.Sqlite.Queries
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_tags_lastupdateutc' ON 'tags' ('lastupdateutc' ASC);");
 
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_tags_tenantguid_graphguid' ON 'tags' (tenantguid ASC, graphguid ASC);");
+            sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_tags_tenantguid_graphguid_createdutc_guid' ON 'tags' (tenantguid ASC, graphguid ASC, createdutc ASC, guid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_tags_tenantguid_graphguid_nodeguid' ON 'tags' (tenantguid ASC, graphguid ASC, nodeguid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_tags_tenantguid_graphguid_edgeguid' ON 'tags' (tenantguid ASC, graphguid ASC, edgeguid ASC);");
 
@@ -259,6 +261,7 @@ namespace LiteGraph.GraphRepositories.Sqlite.Queries
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_vectors_lastupdateutc' ON 'vectors' ('lastupdateutc' ASC);");
 
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_vectors_tenantguid_graphguid' ON 'vectors' (tenantguid ASC, graphguid ASC);");
+            sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_vectors_tenantguid_graphguid_createdutc_guid' ON 'vectors' (tenantguid ASC, graphguid ASC, createdutc ASC, guid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_vectors_tenantguid_graphguid_nodeguid' ON 'vectors' (tenantguid ASC, graphguid ASC, nodeguid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_vectors_tenantguid_graphguid_edgeguid' ON 'vectors' (tenantguid ASC, graphguid ASC, edgeguid ASC);");
 
@@ -317,6 +320,7 @@ namespace LiteGraph.GraphRepositories.Sqlite.Queries
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_nodes_lastupdateutc' ON 'nodes' ('lastupdateutc' ASC);");
 
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_nodes_tenantguid_graphguid' ON 'nodes' (tenantguid ASC, graphguid ASC);");
+            sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_nodes_tenantguid_graphguid_createdutc_guid' ON 'nodes' (tenantguid ASC, graphguid ASC, createdutc ASC, guid ASC);");
             sql.AppendLine("DROP INDEX IF EXISTS 'idx_nodes_data';");
 
             #endregion
@@ -347,6 +351,7 @@ namespace LiteGraph.GraphRepositories.Sqlite.Queries
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_lastupdateutc' ON 'edges' ('lastupdateutc' ASC);");
 
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_tenantguid_graphguid' ON 'edges' (tenantguid ASC, graphguid ASC);");
+            sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_tenantguid_graphguid_createdutc_guid' ON 'edges' (tenantguid ASC, graphguid ASC, createdutc ASC, guid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_tenantguid_graphguid_fromguid' ON 'edges' (tenantguid ASC, graphguid ASC, fromguid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_tenantguid_graphguid_toguid' ON 'edges' (tenantguid ASC, graphguid ASC, toguid ASC);");
             sql.AppendLine("CREATE INDEX IF NOT EXISTS 'idx_edges_tenantguid_graphguid_fromguid_toguid' ON 'edges' (tenantguid ASC, graphguid ASC, fromguid ASC, toguid ASC);");
