@@ -3,8 +3,33 @@
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
-		<Version>10.1.0</Version>
+		<Version>10.2.0</Version>
 		<Description>LiteGraph standalone REST server.</Description>
+		<EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+		<!--
+			Reflection-based System.Text.Json is off in every build, not only Native AOT: the server serializes only through
+			source-generated metadata (ServerJson, LiteGraphJsonContext), so the JIT build behaves exactly like the native
+			one and the test suites catch a type without metadata.
+		-->
+		<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+		<!--
+			Watson's SslSettings.SslCertificate (X509Certificate2) is reachable from Settings.Rest, so the JSON source
+			generator emits metadata for X509Certificate2 and PublicKey, which uses obsolete APIs (SYSLIB0026-0028). That
+			metadata is never used (SslSettingsJsonConverter handles SSL settings), and the server itself uses no X509 APIs.
+			Remove once Watson marks SslSettings.SslCertificate with [JsonIgnore].
+		-->
+		<NoWarn>$(NoWarn);SYSLIB0026;SYSLIB0027;SYSLIB0028</NoWarn>
+	</PropertyGroup>
+
+	<!--
+		Native AOT publish (see docs/AOT.md):
+		  dotnet publish src/LiteGraph.Server/LiteGraph.Server.csproj -c Release -f net10.0 -r <rid> -p:PublishAot=true -o <dir>
+		Every trim or AOT warning, including one from a dependency, fails the publish.
+	-->
+	<PropertyGroup Condition="'$(PublishAot)' == 'true'">
+		<TrimmerSingleWarn>false</TrimmerSingleWarn>
+		<WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL2087;IL2091;IL2104;IL3050;IL3051;IL3053</WarningsAsErrors>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -12,12 +37,12 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Clutch.Sdk" Version="0.2.0" />
+		<PackageReference Include="Clutch.Sdk" Version="0.3.0" />
 		<PackageReference Include="OpenTelemetry" Version="1.19.1" />
 		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
-		<PackageReference Include="PolyPrompt" Version="3.1.0" />
+		<PackageReference Include="PolyPrompt" Version="3.2.0" />
 		<PackageReference Include="StackExchange.Redis" Version="3.3.1" />
-		<PackageReference Include="Watson" Version="7.2.2" />
+		<PackageReference Include="Watson" Version="7.3.0" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -336,6 +336,25 @@ The bulk of the 205 MCP tools are covered inside the domain tables above: the `M
 | Metrics (`GET /metrics`, unauthenticated) | Obs:RestMetricLabels, McpMetricLabels; Imp:Observability.MetricsEndpoint; ChatR:Metrics (chat counters, no tenant-GUID leak) | Obs:RestErrorCounter / McpErrorCounter (error counters increment) | |
 | Route/auth-bucket parity | RouteAuth:ParitySnapshot (asserts exactly 4 public routes, 207 authenticated, no overlap, ~24 sensitive routes pinned to the authenticated bucket) | inherent (the case fails on any drift in either direction) | |
 
+## Native AOT (v10.2)
+
+| Surface | Positive | Negative | Gap? |
+|---|---|---|---|
+| JSON output of every model type (compact, indented, round trip) | `Aot.Serialization`: `Aot.SerializationParity.Compact`, `.Pretty`, `.RoundTrip` (byte-for-byte against baselines captured from 10.1) | — | — |
+| Timestamps keep their UTC value through JSON in any time zone | `Aot.DateTimeUtc`; `SDK-C#`: `Serializer.DateTimeUtc`; `Test.Aot` timestamp check | Offset and zone-less inputs | — |
+| Source-generated metadata covers every model type | `Aot.ContextCoverage` | — | — |
+| JIT behavior for exceptions and unregistered types | `Aot.JitCompatibility` | — | — |
+| GEXF export output | `Aot.GexfParity` (against the `XmlSerializer` baseline) | — | — |
+| Library under Native AOT (SQLite and PostgreSQL) | `src/Test.Aot`, published with `PublishAot` and run in CI | Unregistered application type fails with `NotSupportedException`; failing transaction rolls back with a provider error code | — |
+| C# SDK under Native AOT | `SDK-C#` suite published with `PublishAot=true` against a live server (157 cases), run in CI | Same negatives as the JIT run | — |
+| REST and MCP servers under Native AOT | The full Touchstone run (net10.0) and the server-backed suites (net8.0) against native executables (`LITEGRAPH_TEST_SERVER_EXECUTABLE`, `LITEGRAPH_TEST_MCP_EXECUTABLE`) on Linux, macOS, and Windows in CI | Same negatives as the JIT run | — |
+| Servers and tools serialize without reflection | Reflection-based System.Text.Json is off in every build of the servers and tools, so every server-backed case runs the AOT JSON path under the JIT too; `Aot.Server.ContextCoverage` | A type without metadata throws `NotSupportedException` | — |
+| Server JSON output (types, default settings, chat stream events and tool transcripts, OpenAPI, seed data, chat tool schemas) | `Aot.Server`: `TypeParity`, `DefaultSettings`, `PayloadShapes`, `Live` (byte for byte against baselines captured before the server work) | — | — |
+| SSL settings with a PFX certificate | `Aot.Server.SslSettings` (real certificate: serializes without the certificate object and round-trips) | — | — |
+| Console tools under Native AOT | CI publishes `lg`, `LiteGraph.SampleDatabase`, and `LoadGenerator` natively and runs them (seed, query, load) | — | — |
+| Docker deployments with native images | CI `deploy` job: all three deployments with `compose.native.yaml`, smoke, and multi-node failover | — | — |
+| MCP tool names, descriptions, and schemas | `Mcp.Protocol.ToolsListBaseline` (211 tools, byte for byte against a baseline captured before the schemas moved from anonymous objects to JSON) | — | — |
+
 ## SDK client coverage (summary)
 
 The three shipped SDKs carry their own test trees, which validate the clients rather than the server. `sdk/csharp/src/Test.Automated` is a live-server regression suite spanning every domain except chat and JSONL import/export; it is almost entirely happy-path (its one explicit negative is the unsupported-backup-provider case). `sdk/python/tests` runs against a mocked transport with strong negative coverage (~79 `pytest.raises`), covering CRUD generically through mixin tests plus dedicated chat, import/export, authorization, transaction, and query modules; its admin tests cover server settings only, not backups or flush. `sdk/js/test` (Jest + MSW) has a dedicated per-domain file for every surface including chat and JSONL import/export, with error-path assertions throughout except in the authorization, query, and traversal test files. Cross-SDK: chat and JSONL import/export are missing from the C# SDK tests; admin backups/flush are missing from Python and JS.

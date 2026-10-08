@@ -4,14 +4,31 @@
 		<OutputType>Exe</OutputType>
 		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<Nullable>enable</Nullable>
-		<Version>10.1.0</Version>
+		<Version>10.2.0</Version>
 		<Description>MCP (Model Context Protocol) server for LiteGraph graph database. Enables integration of document processing, vector storage retrieval, and graph operations via MCP.</Description>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<DocumentationFile>LiteGraph.McpServer.xml</DocumentationFile>
+		<EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+		<!--
+			Reflection-based System.Text.Json is off in every build, not only Native AOT, so the JIT build behaves exactly like
+			the native one and the test suites catch a type without metadata.
+		-->
+		<JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+	</PropertyGroup>
+
+	<!--
+		Native AOT publish (see docs/AOT.md):
+		  dotnet publish src/LiteGraph.McpServer/LiteGraph.McpServer.csproj -c Release -f net10.0 -r <rid> -p:PublishAot=true -o <dir>
+		Every trim or AOT warning, including one from a dependency, fails the publish.
+	-->
+	<PropertyGroup Condition="'$(PublishAot)' == 'true'">
+		<TrimmerSingleWarn>false</TrimmerSingleWarn>
+		<WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2057;IL2067;IL2070;IL2072;IL2075;IL2087;IL2091;IL2104;IL3050;IL3051;IL3053</WarningsAsErrors>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="SyslogLogging" Version="2.3.1" />
-		<PackageReference Include="Voltaic" Version="2.2.1" />
+		<PackageReference Include="SyslogLogging" Version="2.4.0" />
+		<PackageReference Include="Voltaic" Version="2.3.0" />
 	</ItemGroup>
 
 	<ItemGroup>

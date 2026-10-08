@@ -18,6 +18,15 @@ dotnet run --project src/Test.Automated/Test.Automated.csproj --framework net10.
 LITEGRAPH_TEST_POSTGRESQL_CONNECTION_STRING="Host=127.0.0.1;Port=5432;Username=...;Password=...;Database=..." \
   dotnet run --project src/Test.Automated/Test.Automated.csproj --framework net10.0 -- --suite ScaleOut
 
+# Native AOT check of the library (trim/AOT warnings are errors; runs SQLite, plus PostgreSQL when the variable is set)
+dotnet publish src/Test.Aot/Test.Aot.csproj -c Release -f net10.0 -r osx-arm64 -o out/aot && out/aot/Test.Aot
+
+# Native AOT: publish the servers (any IL warning fails the publish), then run every suite against the executables
+dotnet publish src/LiteGraph.Server/LiteGraph.Server.csproj -c Release -f net10.0 -r osx-arm64 -p:PublishAot=true -o out/server-aot
+dotnet publish src/LiteGraph.McpServer/LiteGraph.McpServer.csproj -c Release -f net10.0 -r osx-arm64 -p:PublishAot=true -o out/mcp-aot
+LITEGRAPH_TEST_SERVER_EXECUTABLE=out/server-aot/LiteGraph.Server LITEGRAPH_TEST_MCP_EXECUTABLE=out/mcp-aot/LiteGraph.McpServer \
+  dotnet run --project src/Test.Automated/Test.Automated.csproj --framework net10.0
+
 # Run the server (single node, SQLite, creates litegraph.json and litegraph.db in the current directory)
 dotnet run --project src/LiteGraph.Server/LiteGraph.Server.csproj --framework net10.0
 
@@ -78,6 +87,27 @@ Tenant → Graph → Nodes/Edges → Labels/Tags/Vectors
 - The settings API reads and writes the shared settings file through `Services/SettingsFileService.cs`, which keeps
   values that came from environment variables (node identity, secrets) out of the file.
 - See `docs/CLUSTERING.md`.
+
+#### Native AOT (v10.2)
+- Everything runs on the JIT (default) or as Native AOT with identical behavior: the library and SDK (`IsAotCompatible`)
+  in applications, and `LiteGraph.Server`, `LiteGraph.McpServer`, `LiteGraphConsole`, `LiteGraph.SampleDatabase`, and
+  `LoadGenerator` as native executables (`-p:PublishAot=true`) or native images (`Dockerfile.native`,
+  `compose.native.yaml`). The solution must build with no warnings; the trim and AOT analyzers run in every project.
+- The servers and tools set `JsonSerializerIsReflectionEnabledByDefault=false` in every build, so the JIT build runs the
+  same JSON path as the native one; a type without metadata throws `NotSupportedException` in ordinary test runs.
+- Rules everywhere: JSON goes through `Serializer` (or options built with `Serializer.CreateResolver`, or a
+  `JsonTypeInfo<T>`); never `JsonSerializer` with plain options. No reflection, `XmlSerializer`, anonymous types in
+  serialized values (use a named class or `Dictionary<string, object>`), non-generic `JsonStringEnumConverter`, or
+  `Enum.GetValues(Type)`.
+- Where metadata lives: library `Serialization/LiteGraphJsonContext.cs` (plus the parity list in
+  `Test.Shared/LiteGraphTouchstoneAotSuites.cs`); SDK `LiteGraphSdkJsonContext.cs`; server
+  `Classes/LiteGraphServerJsonContext.cs` (registered by `ServerJson.Register`; plus `_AotServerParityTypes` in
+  `Test.Shared/LiteGraphTouchstoneAotServerSuites.cs`); MCP server `LiteGraphMcpJsonContext` (settings). MCP tool schemas
+  are JSON text through `LiteGraphMcpSchema.Parse`; chat tool property schemas are JSON text in `ChatToolCatalog`.
+- JSON output is pinned by baselines in `Test.Shared/Baselines` (`Aot.Serialization`, `Aot.Server`,
+  `Mcp.Protocol.ToolsListBaseline`); recapture with `LITEGRAPH_CAPTURE_AOT_BASELINES=<dir>` only for intended changes.
+- `LITEGRAPH_TEST_SERVER_EXECUTABLE` / `LITEGRAPH_TEST_MCP_EXECUTABLE` run the server-backed suites against native builds.
+- See `docs/AOT.md`.
 
 ### Data Model Key Points
 

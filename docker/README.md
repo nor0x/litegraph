@@ -62,16 +62,31 @@ Every LiteGraph node answers `GET /v1.0/health/live` (the process is running) an
 Every compose file selects the LiteGraph images through `LITEGRAPH_IMAGE_TAG`, defaulting to the release tag. To run a build you made yourself:
 
 ```
-build-all.bat v10.0.0-rc1
-set LITEGRAPH_IMAGE_TAG=v10.0.0-rc1
+build-all.bat v10.2.0-rc1
+set LITEGRAPH_IMAGE_TAG=v10.2.0-rc1
 cd docker\multi-node
 docker compose up -d
 smoke.bat
 ```
 
-Or put `LITEGRAPH_IMAGE_TAG=v10.0.0-rc1` in the deployment's `.env`. `update.bat` pulls, recreates, and lists containers using the same variable.
+Or put `LITEGRAPH_IMAGE_TAG=v10.2.0-rc1` in the deployment's `.env`. `update.bat` pulls, recreates, and lists containers using the same variable.
 
-The build scripts push the tag you give them, and a release tag (a plain `vMAJOR.MINOR.PATCH` such as `v10.0.0`) also moves `:latest`. Any other tag, such as `v10.0.0-rc1` or a test tag, leaves `:latest` where it was, so testing a build never changes what users pulling `latest` get.
+The build scripts push the tag you give them, and a release tag (a plain `vMAJOR.MINOR.PATCH` such as `v10.2.0`) also moves `:latest`. Any other tag, such as `v10.2.0-rc1` or a test tag, leaves `:latest` where it was, so testing a build never changes what users pulling `latest` get.
+
+## Native AOT images
+
+The default images run the server and MCP server on the .NET runtime (JIT). Both can instead run as Native AOT executables, with the same settings files, environment variables, ports, and behavior, in much smaller images (about 65 MB compressed for the server, against about 400 MB) that start faster. Every deployment directory has a `compose.native.yaml` override that switches the server and MCP server to `<LITEGRAPH_IMAGE_TAG>-native` images; the dashboard, PostgreSQL, Clutch, and the rest are unchanged.
+
+Native images are not published to Docker Hub; build them from this repository (from the repository root):
+
+```
+docker build -f src/LiteGraph.Server/Dockerfile.native -t jchristn77/litegraph:v10.2.0-native src
+docker build -f src/LiteGraph.McpServer/Dockerfile.native -t jchristn77/litegraph-mcp:v10.2.0-native .
+cd docker/multi-node
+LITEGRAPH_IMAGE_TAG=v10.2.0 docker compose -f compose.yaml -f compose.native.yaml up -d
+```
+
+The build compiles for the machine's architecture; use `docker buildx build --platform linux/amd64,linux/arm64/v8` for both. The smoke and failover scripts work the same against native images, and CI runs them against both kinds on every commit. See [Native AOT and trimming](../docs/AOT.md).
 
 ## Upgrading from LiteGraph 9.x
 
